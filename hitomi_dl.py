@@ -222,27 +222,33 @@ def create_cbz(source_dir, gallery_info, gallery_id):
         info = first_item[1]
     elif isinstance(first_item, dict):
         info = first_item
+
+    def format_field(value):
+        if isinstance(value, list):
+            if len(value) >= 4:
+                return "etc"
+            return ",".join(value)
+        return value
         
-    artist = info.get('artist')
-    if isinstance(artist, list):
-        artist = ",".join(artist) # Join if multiple ? simple approach
+    artist = format_field(info.get('artist'))
     if not artist:
         artist = "N_A"
 
-    group = info.get('group')
-    if isinstance(group, list):
-         group = ",".join(group)
+    group = format_field(info.get('group'))
     if not group:
-         group = "" # Empty if missing as per typical conventions, or "N_A"
+        group = "" # Empty if missing as per typical conventions, or "N_A"
     
     # Prefer Japanese title, fall back to default title
     title = info.get('title_jpn')
     if not title:
         title = info.get('title', 'No Title')
     
-    series = info.get('series')
-    if isinstance(series, list):
-        series = ",".join(series)
+    # 'series' is often 'parody' in gallery-dl output for hitomi
+    series_raw = info.get('parody')
+    if not series_raw:
+        series_raw = info.get('series')
+
+    series = format_field(series_raw)
     
     # Construct filename parts
     # [artist]
