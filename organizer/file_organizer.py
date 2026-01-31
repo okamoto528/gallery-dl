@@ -45,7 +45,22 @@ class FileOrganizer:
             self.logger.info(f"Fetching metadata for ID {gallery_id}...")
             metadata = fetch_metadata(gallery_id)
             if not metadata:
-                return False, f"Failed to fetch metadata for ID {gallery_id}"
+                # Fallback: Attempt to proceed without online metadata
+                # We need at least Author to organize.
+                fallback_author = self.extract_author_from_filename(filename)
+                if not fallback_author:
+                    fallback_author = "N_A"
+                
+                metadata = {
+                    "id": gallery_id,
+                    "title": filename, # Use filename as title if metadata fails
+                    "author": fallback_author,
+                    "category": target_category,
+                    "series": None,
+                    "tags": "[]",
+                    "language": "unknown"
+                }
+                self.logger.warning(f"Metadata fetch failed for {gallery_id}. Using fallback data.")
 
         # 2. Resolve Author (Alias Check)
         original_author = metadata.get("author", "N_A")
@@ -89,50 +104,40 @@ class FileOrganizer:
         self.db.upsert_gallery(metadata)
         
         # Update Author Settings (Last used category)
-        # We record the Category used for the ORIGINAL author name (so if they pick the specific alias again, it works)
-        # AND the Primary Name? Usually mapping is per Author Name entity.
-        # Let's save for Primary Author for consistency, but if the user has split personalities? 
-        # Spec said "Corresponding Author". Primary is safe.
         self.db.update_author_category(primary_author, target_category)
 
         return True, f"Moved to {safe_category}/{safe_author}"
 
-    def get_default_category_for_file(self, file_path):
-        """
-        Predicts the default category for a file based on Author history or Metadata.
-        """
-        gallery_id = extract_id_from_filename(os.path.basename(file_path))
-        if not gallery_id:
-            return None
-
-        # Try DB logic for existing file?
-        # Or just Fetch metadata solely for prediction?
-        # Fetching metadata is slow. 
-        # If we just draged and dropped, we might not want to wait for network.
-        # BUT we need the local DB lookup.
-        
-        # 1. DB Lookup (Gallery)
-        db_data = self.db.get_gallery_by_id(gallery_id)
-        if db_data:
-            # If already exists, maybe return its current category?
-            return db_data[5] # category column
-        
-        # 2. What if we don't have gallery info BUT we have author info?
-        # We don't know the author without fetching metadata! 
-        # So we can't predict WITHOUT fetching metadata unless we parse the filename (which is [Artist] Title...)
-        # Hitomi naming convention: [Artist] Title.
-        
-        filename = os.path.basename(file_path)
-        # Try to extract [Author] from filename
+    def extract_author_from_filename(self, filename):
         import re
         match = re.match(r'^\[(.*?)\]', filename)
         if match:
-            potential_author = match.group(1)
-            # Check DB for this author's default category
-            # Need to handle Alias here too?
-            primary = self.db.get_primary_author(potential_author)
+            return match.group(1)
+        return None
+
+    def get_default_category_for_file(self, file_path):
+        """
+        Predicts the default category for a file based on Author history or Metadata.
+        Returns: (Category, AuthorName) tuple or (None, AuthorName)
+        """
+        filename = os.path.basename(file_path)
+        gallery_id = extract_id_from_filename(filename)
+        
+        author_from_file = self.extract_author_from_filename(filename)
+        potential_cat = None
+
+        # 1. DB Lookup (Gallery)
+        if gallery_id:
+            db_data = self.db.get_gallery_by_id(gallery_id)
+            if db_data:
+                # Return existing category AND author
+                return db_data[5], db_data[4] 
+        
+        # 2. Author History
+        if author_from_file:
+            primary = self.db.get_primary_author(author_from_file)
             saved_cat = self.db.get_author_category(primary)
             if saved_cat:
-                return saved_cat
+                potential_cat = saved_cat
         
-        return None
+        return potential_cat, author_from_file

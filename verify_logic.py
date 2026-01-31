@@ -99,5 +99,47 @@ class TestOrganizerLogic(unittest.TestCase):
         expected_path = os.path.join(TEST_BASE_DIR, "Manga", "Primary Name", filename)
         self.assertTrue(os.path.exists(expected_path), f"File should be in Primary Name folder, found in: {msg}")
 
+    def test_author_extraction(self):
+        filename = "[ArtistName] Title (123).cbz"
+        author = self.organizer.extract_author_from_filename(filename)
+        self.assertEqual(author, "ArtistName")
+        
+        filename2 = "Title Only (123).cbz"
+        author2 = self.organizer.extract_author_from_filename(filename2)
+        self.assertIsNone(author2)
+
+    @patch('organizer.file_organizer.fetch_metadata')
+    def test_metadata_fallback(self, mock_fetch):
+         # Simulate fetch failure
+        mock_fetch.return_value = None
+        
+        filename = "[Fallback Author] Fallback Title (99999).cbz"
+        file_path = os.path.join(TEST_SOURCE_DIR, filename)
+        with open(file_path, 'w') as f:
+            f.write("content")
+            
+        success, msg = self.organizer.organize_file(file_path, "Game CG", TEST_BASE_DIR)
+        
+        self.assertTrue(success, f"Fallback failed: {msg}")
+        
+        # Check Path (Should use Fallback Author)
+        expected_path = os.path.join(TEST_BASE_DIR, "Game CG", "Fallback Author", filename)
+        self.assertTrue(os.path.exists(expected_path))
+
+    def test_category_persistence(self):
+        # Initial check (Should have defaults)
+        cats = self.db.get_all_categories()
+        self.assertIn('Doujinshi', cats)
+        self.assertIn('Manga', cats)
+        
+        # Add new
+        self.db.add_category("New Custom Cat")
+        cats_updated = self.db.get_all_categories()
+        self.assertIn("New Custom Cat", cats_updated)
+        
+        # No duplicates
+        self.db.add_category("Doujinshi")
+        self.assertEqual(len(cats_updated), len(self.db.get_all_categories()))
+
 if __name__ == '__main__':
     unittest.main()

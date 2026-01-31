@@ -56,6 +56,19 @@ class DBManager:
         )
         ''')
 
+        # Categories table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS categories (
+            name TEXT PRIMARY KEY
+        )
+        ''')
+        
+        # Seed default categories if empty
+        cursor.execute("SELECT count(*) FROM categories")
+        if cursor.fetchone()[0] == 0:
+            defaults = [('Doujinshi',), ('Manga',), ('Game CG',), ('Artist CG',), ('Anime',), ('Unknown',)]
+            cursor.executemany("INSERT INTO categories (name) VALUES (?)", defaults)
+
         # Insert some initial data if needed, or just commit
         conn.commit()
         conn.close()
@@ -142,5 +155,23 @@ class DBManager:
         INSERT OR REPLACE INTO author_aliases (alias_name, primary_author_name)
         VALUES (?, ?)
         ''', (alias, primary))
+        conn.commit()
+        conn.close()
+
+    # --- Category Operations ---
+
+    def get_all_categories(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM categories ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+
+    def add_category(self, name):
+        if not name: return
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,))
         conn.commit()
         conn.close()
