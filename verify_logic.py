@@ -141,5 +141,37 @@ class TestOrganizerLogic(unittest.TestCase):
         self.db.add_category("Doujinshi")
         self.assertEqual(len(cats_updated), len(self.db.get_all_categories()))
 
+    def test_category_persistence(self):
+        # Initial check (Should have defaults)
+        cats = self.db.get_all_categories()
+        self.assertIn('Doujinshi', cats)
+        self.assertIn('Manga', cats)
+        
+        # Add new
+        self.db.add_category("New Custom Cat")
+        cats_updated = self.db.get_all_categories()
+        self.assertIn("New Custom Cat", cats_updated)
+        
+        # No duplicates
+        self.db.add_category("Doujinshi")
+        self.assertEqual(len(cats_updated), len(self.db.get_all_categories()))
+
+    def test_author_na_fallback(self):
+        # 1. Normal N_A with Group
+        filename = "[N_A][Group Name] Title.cbz"
+        self.assertEqual(self.organizer.extract_author_from_filename(filename), "Group Name")
+        
+        # 2. Wide N／A with Group
+        filename2 = "[N／A][Group Name] Title.cbz"
+        self.assertEqual(self.organizer.extract_author_from_filename(filename2), "Group Name")
+        
+        # 3. N_A without Group
+        filename3 = "[N_A] Title.cbz"
+        self.assertEqual(self.organizer.extract_author_from_filename(filename3), "N_A")
+        
+        # 4. Normal Author with Group (Should ignore group)
+        filename4 = "[Artist][Group] Title.cbz"
+        self.assertEqual(self.organizer.extract_author_from_filename(filename4), "Artist")
+
 if __name__ == '__main__':
     unittest.main()

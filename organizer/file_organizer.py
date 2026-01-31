@@ -110,9 +110,22 @@ class FileOrganizer:
 
     def extract_author_from_filename(self, filename):
         import re
-        match = re.match(r'^\[(.*?)\]', filename)
+        # Match matches from beginning of string
+        # Capture first bracket and optional second bracket
+        match = re.match(r'^\[([^\]]+)\](?:\[([^\]]+)\])?', filename)
+        
         if match:
-            return match.group(1)
+            first = match.group(1)
+            second = match.group(2)
+            
+            # Check for N_A or N／A (Case insensitive just in case, though user specified precise cases)
+            if first.upper() in ("N_A", "N／A"):
+                if second:
+                    return second
+                return first # Return N_A if no group found
+            
+            return first
+            
         return None
 
     def get_default_category_for_file(self, file_path):
