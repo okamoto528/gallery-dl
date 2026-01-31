@@ -9,7 +9,7 @@
         "orange manbou",
         "mochizuki tooya"
     ],
-    "temp_dir": "E:\\hitomi_dl\\temp_download",
+    "temp_dir": "J:\\hitomi_dl\\temp_download",
     "downloader": {
         "retries": 8,
         "timeout": 45.0,

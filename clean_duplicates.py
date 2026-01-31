@@ -45,17 +45,31 @@ class DuplicateCleaner:
         try:
             # -r used for regex in some versions, but keyword might be simple. 
             # We want full paths. es output is full paths by default.
-            cmd = ['es', query]
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+            # IMPORTANT: Pass keyword and extension as separate arguments.
+            # es matches ALL arguments (AND logic).
+            cmd = ['es', keyword, '*.cbz']
+            
+            # Windows 'es' usually outputs in system encoding (cp932/Shift-JIS on Japanese Windows).
+            # Forcing utf-8 causes decode errors.
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='cp932', errors='replace')
+            
             if result.returncode != 0:
                 print(f"Error executing es: {result.stderr}")
                 return []
             
+            if not result.stdout:
+                return []
+                
             lines = result.stdout.strip().split('\n')
             return [line.strip() for line in lines if line.strip() and line.strip().lower().endswith('.cbz')]
         except FileNotFoundError:
             print("Error: 'es' command not found. Please ensure Everything CLI is installed and in your PATH.")
             sys.exit(1)
+        except Exception as e:
+            print(f"Error searching Everything: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def scan_directory(self, directory):
         """Recursively scan directory for .cbz files."""
@@ -68,15 +82,38 @@ class DuplicateCleaner:
                     files.append(os.path.join(root, f))
         return files
 
+    def load_config(self):
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'clean_duplicates.json')
+        if os.path.exists(config_path):
+            try:
+                import json
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading config: {e}")
+        return {}
+
     def move_to_trash(self, path):
-        """Move path to _trash directory in its parent folder."""
-        parent_dir = os.path.dirname(path)
-        trash_dir = os.path.join(parent_dir, '_trash')
+        """Move path to _trash directory."""
+        config = self.load_config()
+        trash_config = config.get('trash_dir')
+
+        if trash_config:
+            # Use configured trash directory
+            # Expand user path (~) and make absolute if needed, or relative to CWD
+            # For simplicity, if it's relative, let's treat it relative to CWD or Script?
+            # Usually Config relative paths are relative to the config file or CWD.
+            # Let's assume CWD or Absolute.
+            trash_dir = os.path.abspath(trash_config)
+        else:
+            # Default: _trash in parent directory
+            parent_dir = os.path.dirname(path)
+            trash_dir = os.path.join(parent_dir, '_trash')
         
         basename = os.path.basename(path)
         
         if self.dry_run:
-            print(f"[Dry-Run] Move to _trash: {basename}")
+            print(f"[Dry-Run] Move to: {os.path.join(trash_dir, basename)}")
             return True
 
         if not os.path.exists(trash_dir):
@@ -98,14 +135,9 @@ class DuplicateCleaner:
 
         try:
             shutil.move(path, dest_path)
-            print(f"Moved: {basename} -> _trash/")
+            print(f"Moved: {basename} -> {trash_dir}")
             
             if self.delete_mode:
-                # Delete after move
-                # To be safe, we verify it exists in trash then delete?
-                # Or just delete the moved file.
-                # Spec says: "Once moved to shelter... delete if option is on"
-                # Implementation: Move first, then delete the file in trash.
                 if os.path.exists(dest_path):
                     if os.path.isdir(dest_path):
                         shutil.rmtree(dest_path)

@@ -5,7 +5,7 @@ import os
 import shutil
 import zipfile
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from PIL import Image
 
 # Configuration
@@ -102,9 +102,13 @@ def filter_gallery(metadata, target_lang, exclude_tags, exclude_artists):
     # 1. Language Check
     # hitomi.la/gallery-dl usually provides 'language' field
     # If target_lang is specified, we skip if it doesn't match.
-    # Note: Sometimes language might be missing or different.
-    current_lang = info.get('language', '').lower()
-    if target_lang and current_lang != target_lang.lower():
+    # Note: Sometimes language might be missing or different, or explicitly None.
+    lang_val = info.get('language')
+    current_lang = lang_val.lower() if lang_val else ''
+    
+    # Only skip if current_lang IS set (known) and differs from target
+    # If current_lang is unknown (None/Empty), we treat it as valid (User Request)
+    if target_lang and current_lang and current_lang != target_lang.lower():
         # Ensure target_lang is not empty string
         if target_lang:
              print(f"Skipping: Language '{current_lang}' does not match target '{target_lang}'")
@@ -278,13 +282,15 @@ def create_cbz(source_dir, gallery_info, gallery_id):
     
     filename = name_str + ".cbz"
     filepath = os.path.join(OUTPUT_DIR, filename)
+    temp_filepath = filepath + ".tmp"
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
 
     print(f"Creating CBZ: {filename}")
     
-    with zipfile.ZipFile(filepath, 'w') as cbz:
+    # Write to temp file first to ensure atomicity
+    with zipfile.ZipFile(temp_filepath, 'w') as cbz:
         for root, dirs, files in os.walk(source_dir):
             files.sort()
             for f in files:
@@ -292,6 +298,20 @@ def create_cbz(source_dir, gallery_info, gallery_id):
                 # Add to zip, flattening the structure (placing files at root of zip)
                 # This assumes unique filenames, which is typical for hitomi
                 cbz.write(full_path, arcname=f)
+
+    # Rename temp file to final filename
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+        except:
+            pass
+            
+    try:
+        os.replace(temp_filepath, filepath)
+    except OSError as e:
+        print(f"Error renaming {temp_filepath} to {filepath}: {e}")
+        # If rename fails, we might want to keep the temp file or not. 
+        # But usually this works.
 
     return filepath
 
@@ -419,18 +439,57 @@ def main():
     
     ids = list(range(start, end + 1))
     
+    # Check existing files to resume/skip
+    print("Checking for existing files...")
+    existing_ids = set()
+    if os.path.exists(OUTPUT_DIR):
+        for f in os.listdir(OUTPUT_DIR):
+            if f.endswith(".cbz"):
+                # Pattern: ... (ID).cbz
+                # Regex match
+                import re
+                match = re.search(r'\((\d+)\)\.cbz$', f)
+                if match:
+                    existing_ids.add(int(match.group(1)))
+    
+    original_count = len(ids)
+    ids = [gid for gid in ids if gid not in existing_ids]
+    skipped_count = original_count - len(ids)
+    
+    if skipped_count > 0:
+        print(f"Skipping {skipped_count} already processed galleries.")
+    
+    if not ids:
+        print("All galleries in range already processed.")
+        return
+
     print(f"Starting parallel processing with {max_workers} workers for {len(ids)} galleries...")
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_gallery, gid, args.lang, exclude_tags, exclude_artists): gid for gid in ids}
-        for future in futures:
-            gid = futures[future]
-            try:
-                future.result()
-            except Exception as e:
-                print(f"ID {gid}: An error occurred during processing: {e}")
-                import traceback
-                traceback.print_exc()
+        try:
+            futures = {executor.submit(process_gallery, gid, args.lang, exclude_tags, exclude_artists): gid for gid in ids}
+            for future in futures:
+                gid = futures[future]
+                try:
+                    # Wait for result with a timeout to allow KeyboardInterrupt to be caught immediately
+                    while not future.done():
+                        try:
+                            future.result(timeout=0.5)
+                        except TimeoutError:
+                            continue
+                    # Just in case it finished right after Loop?
+                    future.result()
+                except TimeoutError:
+                    if sys.version_info >= (3, 3):
+                        pass
+                    pass
+                except Exception as e:
+                    print(f"ID {gid}: An error occurred during processing: {e}")
+                    import traceback
+                    traceback.print_exc()
+        except KeyboardInterrupt:
+            print("\nProcessing interrupted by user. Exiting IMMEDIATELY...")
+            os._exit(1)
 
     # Final cleanup of temp root
     try:
@@ -446,4 +505,8 @@ def main():
             pass
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nAborted.")
+        os._exit(1)
