@@ -41,9 +41,11 @@ class FileOrganizer:
                 "language": db_data[8]
             }
         else:
-            # Fetch from Web
-            self.logger.info(f"Fetching metadata for ID {gallery_id}...")
-            metadata = fetch_metadata(gallery_id)
+            
+            # Webからの取得処理をコメントアウト
+            # self.logger.info(f"Fetching metadata for ID {gallery_id}...")
+            # metadata = fetch_metadata(gallery_id)
+            metadata = None
             if not metadata:
                 # Fallback: Attempt to proceed without online metadata
                 # We need at least Author to organize.

@@ -134,6 +134,11 @@ class OrganizerApp(TkinterDnD.Tk):
         self.tree.dnd_bind('<<Drop>>', self.drop_files)
         
         # Editing Binding
+        # Single click to edit. Note: This might conflict with row selection.
+        # However, user requested "Single click".
+        # We need to make sure we don't block selection of other columns.
+        self.tree.bind("<ButtonRelease-1>", self.on_click_release)
+        # Double click to open file
         self.tree.bind("<Double-1>", self.on_double_click)
         
         # 3. Bottom Bar: Actions & Log
@@ -200,8 +205,8 @@ class OrganizerApp(TkinterDnD.Tk):
         item_id = self.tree.insert("", tk.END, text=os.path.basename(path), values=(author, prediction, "Pending"))
         self.files_map[path] = item_id
 
-    def on_double_click(self, event):
-        """Handle double click to edit category"""
+    def on_click_release(self, event):
+        """Handle single click release to edit category specific column"""
         region = self.tree.identify("region", event.x, event.y)
         if region != "cell":
             return
@@ -214,6 +219,35 @@ class OrganizerApp(TkinterDnD.Tk):
                 return
                 
             self.edit_category(item_id, column)
+
+    def on_double_click(self, event):
+        """Handle double click to open file"""
+        region = self.tree.identify("region", event.x, event.y)
+        if region != "tree" and region != "cell":
+             return
+
+        column = self.tree.identify_column(event.x)
+        # #0 is the tree column (File)
+        if column == "#0":
+            item_id = self.tree.identify_row(event.y)
+            if not item_id:
+                return
+            
+            # Retrieve file path
+            file_path = None
+            for p, iid in self.files_map.items():
+                if iid == item_id:
+                    file_path = p
+                    break
+            
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.startfile(file_path)
+                    self.log(f"Opened file: {os.path.basename(file_path)}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to open file: {e}")
+            else:
+                 messagebox.showwarning("Warning", "File not found.")
 
     def edit_category(self, item_id, column):
         x, y, w, h = self.tree.bbox(item_id, column)

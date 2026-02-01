@@ -59,15 +59,30 @@ class DBManager:
         # Categories table
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS categories (
-            name TEXT PRIMARY KEY
+            name TEXT PRIMARY KEY,
+            display_order INTEGER DEFAULT 0
         )
         ''')
+        
+        # Migration: Check if display_order exists
+        cursor.execute("PRAGMA table_info(categories)")
+        columns = [info[1] for info in cursor.fetchall()]
+        if 'display_order' not in columns:
+            cursor.execute("ALTER TABLE categories ADD COLUMN display_order INTEGER DEFAULT 0")
         
         # Seed default categories if empty
         cursor.execute("SELECT count(*) FROM categories")
         if cursor.fetchone()[0] == 0:
-            defaults = [('Doujinshi',), ('Manga',), ('Game CG',), ('Artist CG',), ('Anime',), ('Unknown',)]
-            cursor.executemany("INSERT INTO categories (name) VALUES (?)", defaults)
+            # name, display_order
+            defaults = [
+                ('Doujinshi', 10), 
+                ('Manga', 20), 
+                ('Game CG', 30), 
+                ('Artist CG', 40), 
+                ('Anime', 50), 
+                ('Unknown', 999)
+            ]
+            cursor.executemany("INSERT INTO categories (name, display_order) VALUES (?, ?)", defaults)
 
         # Insert some initial data if needed, or just commit
         conn.commit()
@@ -163,7 +178,8 @@ class DBManager:
     def get_all_categories(self):
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM categories ORDER BY name")
+        # Order by display_order first, then name
+        cursor.execute("SELECT name FROM categories ORDER BY display_order ASC, name ASC")
         rows = cursor.fetchall()
         conn.close()
         return [r[0] for r in rows]
