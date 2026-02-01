@@ -3,6 +3,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from tkinterdnd2 import DND_FILES, TkinterDnD
 import os
 import threading
+import subprocess
 from .db_manager import DBManager
 from .file_organizer import FileOrganizer
 
@@ -144,6 +145,8 @@ class OrganizerApp(TkinterDnD.Tk):
         
         ttk.Button(action_frame, text="Clear List", command=self.clear_list).pack(side=tk.LEFT, padx=5)
         
+        ttk.Button(action_frame, text="Clean Duplicates", command=self.run_clean_duplicates).pack(side=tk.LEFT, padx=5)
+        
         # Log Area
         log_frame = ttk.LabelFrame(self, text="Log", padding=5)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -272,6 +275,69 @@ class OrganizerApp(TkinterDnD.Tk):
 
     def open_alias_manager(self):
         AliasManager(self, self.db)
+
+    def run_clean_duplicates(self):
+        """Run clean_duplicates.py with the Author from selected files or all files."""
+        selected_items = self.tree.selection()
+        
+        # Collect Authors to process
+        authors_to_process = set()
+        
+        if selected_items:
+            # Get Authors from selected items
+            for item in selected_items:
+                values = self.tree.item(item, "values")
+                author = values[0]  # values = (Author, Category, Status)
+                if author and author != "Unknown":
+                    authors_to_process.add(author)
+        else:
+            # Get all unique Authors from the file list
+            for item in self.tree.get_children():
+                values = self.tree.item(item, "values")
+                author = values[0]
+                if author and author != "Unknown":
+                    authors_to_process.add(author)
+        
+        if not authors_to_process:
+            messagebox.showwarning("Warning", "No valid Authors found.")
+            return
+        
+        # Determine script path
+        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "clean_duplicates.py")
+        
+        if not os.path.exists(script_path):
+            messagebox.showerror("Error", f"Script not found: {script_path}")
+            return
+        
+        self.log(f"Running Clean Duplicates for {len(authors_to_process)} author(s)...")
+        
+        # Run in a separate thread
+        threading.Thread(target=self._execute_clean_duplicates_batch, args=(script_path, list(authors_to_process)), daemon=True).start()
+
+    def _execute_clean_duplicates_batch(self, script_path, authors):
+        """Execute clean_duplicates for each unique author."""
+        for author in authors:
+            keyword = f"[{author}]"
+            self.queue_log(f"  Processing: {keyword}")
+            try:
+                result = subprocess.run(
+                    ["python", script_path, "--keyword", keyword],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8'
+                )
+                
+                if result.stdout:
+                    for line in result.stdout.strip().split('\n'):
+                        self.queue_log(f"    {line}")
+                if result.stderr:
+                    for line in result.stderr.strip().split('\n'):
+                        self.queue_log(f"    [ERR] {line}")
+                        
+            except Exception as e:
+                self.queue_log(f"  Error: {e}")
+        
+        self.queue_log("Clean Duplicates completed.")
 
     def start_processing_thread(self):
         if not self.files_map:
