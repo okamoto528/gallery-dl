@@ -113,10 +113,12 @@ class OrganizerApp(TkinterDnD.Tk):
         
         # Columns: #0=File(Tree), Author, Category, Status
         self.tree = ttk.Treeview(list_frame, columns=("Author", "Category", "Status"), selectmode="extended")
-        self.tree.heading("#0", text="File")
-        self.tree.heading("Author", text="Author")
-        self.tree.heading("Category", text="Category (Double-click to edit)")
-        self.tree.heading("Status", text="Status")
+        
+        # Configure headers with sort command
+        self.tree.heading("#0", text="File", command=lambda: self.sort_column("#0", False))
+        self.tree.heading("Author", text="Author", command=lambda: self.sort_column("Author", False))
+        self.tree.heading("Category", text="Category (Double-click to edit)", command=lambda: self.sort_column("Category", False))
+        self.tree.heading("Status", text="Status", command=lambda: self.sort_column("Status", False))
         
         self.tree.column("#0", width=300)
         self.tree.column("Author", width=150)
@@ -219,6 +221,24 @@ class OrganizerApp(TkinterDnD.Tk):
                 return
                 
             self.edit_category(item_id, column)
+
+    def sort_column(self, col, reverse):
+        """Sort tree contents when a column header is clicked."""
+        l = []
+        for k in self.tree.get_children(''):
+            if col == "#0":
+                val = self.tree.item(k, 'text')
+            else:
+                val = self.tree.set(k, col)
+            l.append((val, k))
+
+        l.sort(key=lambda t: t[0].lower() if isinstance(t[0], str) else t[0], reverse=reverse)
+
+        for index, (val, k) in enumerate(l):
+            self.tree.move(k, '', index)
+
+        # Update heading command to reverse sort on next click
+        self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))
 
     def on_double_click(self, event):
         """Handle double click to open file"""
