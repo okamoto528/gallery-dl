@@ -433,7 +433,8 @@ class OrganizerApp(TkinterDnD.Tk):
                     ["python", script_path, "--keyword", keyword],
                     capture_output=True,
                     text=True,
-                    encoding='utf-8'
+                    encoding='cp932',
+                    errors='replace'
                 )
                 
                 if result.stdout:
