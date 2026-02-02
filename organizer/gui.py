@@ -198,9 +198,9 @@ class OrganizerApp(TkinterDnD.Tk):
 
     def _execute_search(self, keyword):
         try:
-            # es command: keyword .cbz
-            # We filter for .cbz in arguments to let Everything do the filtering
-            cmd = ["es", keyword, ".cbz"]
+            # es command: keyword .cbz !_trash
+            # We filter for .cbz and exclude _trash
+            cmd = ["es", keyword, ".cbz", "!_trash"]
             
             # Note: explicit encoding might be needed depending on system. 
             # Trying default (None) which uses system locale (e.g. cp932).
@@ -218,6 +218,26 @@ class OrganizerApp(TkinterDnD.Tk):
             count = 0
             for line in lines:
                 path = line.strip()
+                
+                # Filter out _trash directory generally
+                if "_trash" in path.lower():
+                    # More strict check: if _trash is part of the directory path
+                    # (Simple string check might falsely trigger on "my_trash_manga.cbz")
+                    # But user asked for E:\_trash exclusion.
+                    # Let's check if separator+_trash+separator is in it, or if it starts/ends with it in the dir component.
+                    # Safest generic way for "in _trash folder":
+                    if os.sep + "_trash" + os.sep in path.lower() or path.lower().startswith("_trash" + os.sep) or path.lower().endswith(os.sep + "_trash"):
+                        continue
+                    # Also handle E:\_trash\file.cbz -> E:\_trash matches start
+                    # Let's simple normalize and check regex or just simple substring if acceptable.
+                    # Given the request, "exclude files in _trash".
+                    if r"\_trash\\" in path or "/_trash/" in path or path.startswith("_trash\\") or r"\_trash" in os.path.dirname(path):
+                         # If the directory name itself is _trash
+                         # Let's use a simpler path component check
+                         parts = path.split(os.sep)
+                         if "_trash" in [p.lower() for p in parts[:-1]]: # Check directories only
+                             continue
+
                 if os.path.isfile(path) and path.lower().endswith('.cbz'):
                     # Add to tree (must be on main thread)
                     self.after(0, self.add_file_to_tree, path)
