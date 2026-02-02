@@ -107,6 +107,17 @@ class OrganizerApp(TkinterDnD.Tk):
         
         ttk.Button(top_frame, text="Apply to Selected", command=self.apply_category).pack(side=tk.LEFT)
         
+        # Search Bar (Everything)
+        search_frame = ttk.Frame(self, padding=10)
+        search_frame.pack(fill=tk.X)
+        
+        ttk.Label(search_frame, text="Search (Everything):").pack(side=tk.LEFT)
+        self.search_entry = ttk.Entry(search_frame, width=40)
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+        self.search_entry.bind("<Return>", lambda e: self.search_files())
+        
+        ttk.Button(search_frame, text="Search & Add", command=self.search_files).pack(side=tk.LEFT)
+
         # 2. Main List Area (Treeview)
         list_frame = ttk.LabelFrame(self, text="Files", padding=10)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -174,6 +185,50 @@ class OrganizerApp(TkinterDnD.Tk):
             self.dir_entry.delete(0, tk.END)
             self.dir_entry.insert(0, path)
             # Update config implementation if we had persistance...
+            
+    def search_files(self):
+        keyword = self.search_entry.get().strip()
+        if not keyword:
+            messagebox.showwarning("Warning", "Please enter a keyword.")
+            return
+            
+        self.log(f"Searching for '{keyword}' with Everything...")
+        # Run in thread to avoid freeze
+        threading.Thread(target=self._execute_search, args=(keyword,), daemon=True).start()
+
+    def _execute_search(self, keyword):
+        try:
+            # es command: keyword .cbz
+            # We filter for .cbz in arguments to let Everything do the filtering
+            cmd = ["es", keyword, ".cbz"]
+            
+            # Note: explicit encoding might be needed depending on system. 
+            # Trying default (None) which uses system locale (e.g. cp932).
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                self.queue_log(f"Search failed: {result.stderr}")
+                return
+
+            lines = result.stdout.strip().splitlines()
+            count = 0
+            for line in lines:
+                path = line.strip()
+                if os.path.isfile(path) and path.lower().endswith('.cbz'):
+                    # Add to tree (must be on main thread)
+                    self.after(0, self.add_file_to_tree, path)
+                    count += 1
+            
+            self.queue_log(f"Found and added {count} files.")
+            
+        except FileNotFoundError:
+             self.queue_log("Error: 'es' command not found. Please ensure Everything is installed and 'es.exe' is in your PATH.")
+        except Exception as e:
+             self.queue_log(f"Search error: {e}")
 
     def drop_files(self, event):
         files = self.tk.splitlist(event.data)

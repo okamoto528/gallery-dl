@@ -62,7 +62,7 @@ class FileOrganizer:
                     "tags": "[]",
                     "language": "unknown"
                 }
-                self.logger.warning(f"Metadata fetch failed for {gallery_id}. Using fallback data.")
+                # self.logger.warning(f"Metadata fetch failed for {gallery_id}. Using fallback data.")
 
         # 2. Resolve Author (Alias Check)
         original_author = metadata.get("author", "N_A")

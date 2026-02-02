@@ -53,6 +53,7 @@ DEFAULT_CONFIG = {
 ```
 +----------------------------------------------------------+
 | Output Directory: [______] [Browse]  Category: [▼] [Apply]|
+| Search (Everything): [____________] [Search & Add]        |
 +----------------------------------------------------------+
 | Files (Treeview)                                          |
 | +------------------------------------------------------+ |
@@ -141,4 +142,12 @@ if __name__ == "__main__":
     app.mainloop()
 ```
 
+
 通常は `run_organizer.bat` 経由で起動。
+
+### 5.7 ファイル検索 (Everything)
+
+- **検索バー**: Output Directory の下に「Search (Everything)」と入力欄を追加。
+- **Search & Add**: 入力されたキーワードと `.cbz` を条件に `es` コマンドを実行し、ヒットしたファイルをリストに追加する。
+- **要件**: システム環境変数 PATH に `es.exe` が通っていること。
+
