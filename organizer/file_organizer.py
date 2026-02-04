@@ -9,19 +9,19 @@ class FileOrganizer:
         self.db = db_manager
         self.logger = logging.getLogger("Organizer")
 
-    def organize_file(self, file_path, target_category, base_dir):
+    def organize_file(self, file_path, target_category, base_dir, is_read=False):
         """
         Organizes a single .cbz file.
         Returns: (Success: bool, Message: str)
         """
         if not os.path.exists(file_path):
-            return False, f"File not found: {file_path}"
+            return False, f"File not found: {file_path}", None
 
         filename = os.path.basename(file_path)
         gallery_id = extract_id_from_filename(filename)
 
         if not gallery_id:
-            return False, f"Could not extract ID from filename: {filename}"
+            return False, f"Could not extract ID from filename: {filename}", None
 
         # 1. Resolve Metadata
         # Try DB first
@@ -69,7 +69,7 @@ class FileOrganizer:
         primary_author = self.db.get_primary_author(original_author)
 
         # 3. Determine Target Path
-        # Structure: Base / Category / PrimaryAuthor / Filename
+        # Structure: Base / Category / PrimaryAuthor / [Read] / Filename
         
         # Sanitize folder names
         def sanitize(name):
@@ -79,6 +79,11 @@ class FileOrganizer:
         safe_author = sanitize(primary_author)
         
         target_dir = os.path.join(base_dir, safe_category, safe_author)
+        
+        # If Read, append Read folder
+        if is_read:
+            target_dir = os.path.join(target_dir, "Read")
+
         target_path = os.path.join(target_dir, filename)
 
         # 4. Move File
@@ -86,16 +91,16 @@ class FileOrganizer:
             os.makedirs(target_dir, exist_ok=True)
 
         if os.path.abspath(file_path) == os.path.abspath(target_path):
-            return True, "File already in target location."
+            return True, "File already in target location.", target_path
 
         if os.path.exists(target_path):
             # Collision handling: Skip for now as per plan
-            return False, f"Target file already exists: {target_path}"
+            return False, f"Target file already exists: {target_path}", None
 
         try:
             shutil.move(file_path, target_path)
         except Exception as e:
-            return False, f"Error moving file: {e}"
+            return False, f"Error moving file: {e}", None
 
         # 5. Update Database
         # Save metadata with the NEW category (user selected) and Current Path
@@ -108,7 +113,10 @@ class FileOrganizer:
         # Update Author Settings (Last used category)
         self.db.update_author_category(primary_author, target_category)
 
-        return True, f"Moved to {safe_category}/{safe_author}"
+        dest_msg = f"{safe_category}/{safe_author}"
+        if is_read:
+             dest_msg += "/Read"
+        return True, f"Moved to {dest_msg}", target_path
 
     def extract_author_from_filename(self, filename):
         import re

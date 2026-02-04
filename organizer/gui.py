@@ -122,16 +122,18 @@ class OrganizerApp(TkinterDnD.Tk):
         list_frame = ttk.LabelFrame(self, text="Files", padding=10)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # Columns: #0=File(Tree), Author, Category, Status
-        self.tree = ttk.Treeview(list_frame, columns=("Author", "Category", "Status"), selectmode="extended")
+        # Columns: #0=Read(Tree), File, Author, Category, Status
+        self.tree = ttk.Treeview(list_frame, columns=("File", "Author", "Category", "Status"), selectmode="extended")
         
         # Configure headers with sort command
-        self.tree.heading("#0", text="File", command=lambda: self.sort_column("#0", False))
+        self.tree.heading("#0", text="Read", command=lambda: self.sort_column("#0", False))
+        self.tree.heading("File", text="File", command=lambda: self.sort_column("File", False))
         self.tree.heading("Author", text="Author", command=lambda: self.sort_column("Author", False))
         self.tree.heading("Category", text="Category (Double-click to edit)", command=lambda: self.sort_column("Category", False))
         self.tree.heading("Status", text="Status", command=lambda: self.sort_column("Status", False))
         
-        self.tree.column("#0", width=300)
+        self.tree.column("#0", width=50, anchor="center")
+        self.tree.column("File", width=300)
         self.tree.column("Author", width=150)
         self.tree.column("Category", width=100)
         self.tree.column("Status", width=150)
@@ -278,23 +280,65 @@ class OrganizerApp(TkinterDnD.Tk):
         
         if not author:
             author = "Unknown"
+        
+        # Use Unicode Checkboxes: ☐ (u2610) / ☑ (u2611)
+        # Note: Some fonts might not show these well. [ ] / [x] is safer if unicode fail.
+        # Let's try Unicode first as requested "checkbox" look.
+        # Format: "☐" for #0, Filename for #1
+        checked_char = "☑" # or \u2611
+        unchecked_char = "☐" # or \u2610
+        
+        # Check if already in Read folder
+        # Simple check: parent folder is named "Read"
+        is_read = False
+        parent_dir = os.path.basename(os.path.dirname(path))
+        if parent_dir.lower() == "read":
+            is_read = True
             
-        item_id = self.tree.insert("", tk.END, text=os.path.basename(path), values=(author, prediction, "Pending"))
+        initial_check = checked_char if is_read else unchecked_char
+        
+        # text=#0(Read), values=(File, Author, Category, Status)
+        item_id = self.tree.insert("", tk.END, text=initial_check, values=(os.path.basename(path), author, prediction, "Pending"))
         self.files_map[path] = item_id
 
     def on_click_release(self, event):
-        """Handle single click release to edit category specific column"""
+        """Handle single click release to edit category specific column or toggle checkbox"""
         region = self.tree.identify("region", event.x, event.y)
-        if region != "cell":
+        if region != "tree" and region != "cell":
             return
             
         column = self.tree.identify_column(event.x)
-        # Columns: #0=File(tree), #1=Author, #2=Category, #3=Status
-        if column == "#2": # Category
-            item_id = self.tree.identify_row(event.y)
-            if not item_id:
-                return
-                
+        item_id = self.tree.identify_row(event.y)
+        if not item_id:
+            return
+
+        # Check for checkbox click in tree column (#0)
+        # Treeview #0 is the "tree" label
+        if column == "#0":
+            current_text = self.tree.item(item_id, "text")
+            unchecked_char = "☐"
+            checked_char = "☑"
+            new_text = ""
+            new_is_read = False
+            
+            if current_text == unchecked_char:
+                new_text = checked_char
+                new_is_read = True
+            elif current_text == checked_char:
+                new_text = unchecked_char
+                new_is_read = False
+            else:
+                return # Unknown state
+
+            # Toggle UI first
+            self.tree.item(item_id, text=new_text)
+            
+            # Execute Immediate Move
+            self._execute_immediate_move(item_id, new_is_read)
+            return
+
+        # Columns: #0=Read, #1=File, #2=Author, #3=Category, #4=Status
+        if column == "#3": # Category
             self.edit_category(item_id, column)
 
     def sort_column(self, col, reverse):
@@ -322,8 +366,10 @@ class OrganizerApp(TkinterDnD.Tk):
              return
 
         column = self.tree.identify_column(event.x)
-        # #0 is the tree column (File)
-        if column == "#0":
+        # Columns: #0=Read, #1=File, ...
+        # Allow opening via File column (#1) or even Read column if double clicked (toggle + open? ignore.)
+        # Let's restrict to File (#1)
+        if column == "#1":
             item_id = self.tree.identify_row(event.y)
             if not item_id:
                 return
@@ -392,10 +438,11 @@ class OrganizerApp(TkinterDnD.Tk):
             self.check_and_add_category(new_cat)
             
         for item in selected_items:
-            # Preserve Author and Status, update Category
-            # values = (Author, Category, Status)
+            # Preserve File, Author and Status, update Category
+            # values = (File, Author, Category, Status)
             current_values = self.tree.item(item, "values")
-            self.tree.item(item, values=(current_values[0], new_cat, current_values[2]))
+            # Update index 2 (Category)
+            self.tree.item(item, values=(current_values[0], current_values[1], new_cat, current_values[3]))
 
     def clear_list(self):
         self.files_map.clear()
@@ -403,6 +450,7 @@ class OrganizerApp(TkinterDnD.Tk):
             self.tree.delete(item)
 
     def open_alias_manager(self):
+        # Alias manager needs update? It uses DB, independent of list.
         AliasManager(self, self.db)
 
     def run_clean_duplicates(self):
@@ -416,14 +464,15 @@ class OrganizerApp(TkinterDnD.Tk):
             # Get Authors from selected items
             for item in selected_items:
                 values = self.tree.item(item, "values")
-                author = values[0]  # values = (Author, Category, Status)
+                # values = (File, Author, Category, Status) -> Author is index 1
+                author = values[1]
                 if author and author != "Unknown":
                     authors_to_process.add(author)
         else:
             # Get all unique Authors from the file list
             for item in self.tree.get_children():
                 values = self.tree.item(item, "values")
-                author = values[0]
+                author = values[1]
                 if author and author != "Unknown":
                     authors_to_process.add(author)
         
@@ -481,10 +530,65 @@ class OrganizerApp(TkinterDnD.Tk):
         
         threading.Thread(target=self.process_files, args=(base_path,), daemon=True).start()
 
+    def _execute_immediate_move(self, item_id, is_read):
+        """Execute move for a single item triggered by user action."""
+        # Retrieve current info
+        values = self.tree.item(item_id, "values")
+        author = values[1]
+        target_cat = values[2]
+        
+        # Find current path
+        file_path = None
+        for p, iid in self.files_map.items():
+            if iid == item_id:
+                file_path = p
+                break
+        
+        if not file_path:
+            self.log(f"Error: Could not find path for item {item_id}")
+            return
+
+        base_path = self.dir_entry.get()
+        self.tree.set(item_id, "Status", "Moving...")
+        
+        # Run in thread or sync? 
+        # Sync is safer for map update consistency unless we lock. 
+        # Since it's one file, let's try sync for responsiveness check, or short thread.
+        # User wants "Timing of check".
+        
+        def run_move():
+            success, msg, new_path = self.organizer.organize_file(file_path, target_cat, base_path, is_read=is_read)
+            
+            # Post-move updates (schedule on main thread)
+            self.after(0, lambda: self._post_move_update(item_id, success, msg, new_path, file_path))
+            
+        threading.Thread(target=run_move, daemon=True).start()
+
+    def _post_move_update(self, item_id, success, msg, new_path, old_path):
+        if success:
+            status = "Done"
+            if "already in target" in msg:
+                 status = "Done (In Place)"
+            
+            self.tree.set(item_id, "Status", status)
+            self.log(f"[Auto-Move] {msg}")
+            
+            # Update map if path changed
+            if new_path and new_path != old_path:
+                if old_path in self.files_map:
+                    del self.files_map[old_path]
+                self.files_map[new_path] = item_id
+                
+        else:
+            self.tree.set(item_id, "Status", "Error")
+            self.log(f"[Auto-Move Error] {msg}")
+            # Revert checkbox?
+            # Doing so might cause confusion if user spams click. Leave as is, user sees Error.
+
     def process_files(self, base_path):
         self.queue_log("--- Starting Processing ---")
         
-        # We iterate over the TREE items to maintain order and get the user-set category
+        # We iterate over the TREE items to maintain order
         items = self.tree.get_children()
         
         success_count = 0
@@ -492,9 +596,11 @@ class OrganizerApp(TkinterDnD.Tk):
         fail_count = 0
         
         for item_id in items:
-            # info = [Author, Category, Status]
+            # values = (File, Author, Category, Status)
             values = self.tree.item(item_id, "values")
-            target_cat = values[1]
+            # Index 2 is Category
+            target_cat = values[2]
+            author = values[1]
             
             # Find path from map
             file_path = None
@@ -508,16 +614,16 @@ class OrganizerApp(TkinterDnD.Tk):
 
             self.queue_log(f"Processing: {os.path.basename(file_path)}")
             # Update status to processing
-            self.queue_update_item(item_id, values[0], target_cat, "Processing...")
+            self.queue_update_item(item_id, values[0], author, target_cat, "Processing...")
             
-            success, msg = self.organizer.organize_file(file_path, target_cat, base_path)
+            # Check read status
+            item_text = self.tree.item(item_id, "text")
+            is_read = item_text.startswith("☑")
+            
+            success, msg, new_path = self.organizer.organize_file(file_path, target_cat, base_path, is_read=is_read)
             
             status_msg = ""
             if success:
-                # organize_file returns True on move or "File already in target".
-                # If msg indicates skip... wait. file_organizer returns False on existence collision?
-                # User said "Status: Skipped".
-                # My logic in file_organizer: return False, "Target file already exists: ..."
                 if "already in target" in msg:
                      status_msg = "Done (In Place)"
                      success_count += 1
@@ -525,6 +631,13 @@ class OrganizerApp(TkinterDnD.Tk):
                      status_msg = "Done"
                      success_count += 1
                 self.queue_log(f"  [OK] {msg}")
+                
+                # Update map
+                if new_path and new_path != file_path:
+                    if file_path in self.files_map:
+                        del self.files_map[file_path]
+                    self.files_map[new_path] = item_id
+                    
             else:
                 if "already exists" in msg:
                     status_msg = "Skipped"
@@ -535,7 +648,7 @@ class OrganizerApp(TkinterDnD.Tk):
                     fail_count += 1
                     self.queue_log(f"  [Error] {msg}")
             
-            self.queue_update_item(item_id, values[0], target_cat, status_msg)
+            self.queue_update_item(item_id, values[0], author, target_cat, status_msg)
         
         self.queue_log(f"--- Completed: {success_count} OK, {skip_count} Skip, {fail_count} Fail ---")
         self.after(0, self.cleanup_ui)
@@ -543,8 +656,9 @@ class OrganizerApp(TkinterDnD.Tk):
     def queue_log(self, msg):
         self.after(0, lambda: self.log(msg))
         
-    def queue_update_item(self, item_id, author, cat, status):
-        self.after(0, lambda: self.tree.item(item_id, values=(author, cat, status)))
+    def queue_update_item(self, item_id, filename, author, cat, status):
+        # values = (File, Author, Category, Status)
+        self.after(0, lambda: self.tree.item(item_id, values=(filename, author, cat, status)))
 
     def cleanup_ui(self):
         self.process_btn.config(state='normal')
