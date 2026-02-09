@@ -1,7 +1,0 @@
-{
-    "downloader": {
-        "retries": 8,
-        "timeout": 45.0,
-        "sleep": 1.2
-    }
-}
