@@ -412,6 +412,7 @@ class OrganizerApp(TkinterDnD.Tk):
             combo.destroy()
             
         combo.bind("<Return>", save_edit)
+        combo.bind("<<ComboboxSelected>>", save_edit)
         combo.bind("<FocusOut>", save_edit)
         combo.bind("<Escape>", cancel_edit)
 
