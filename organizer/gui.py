@@ -4,6 +4,7 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 import os
 import threading
 import subprocess
+import shutil
 from .db_manager import DBManager
 from .file_organizer import FileOrganizer
 
@@ -155,6 +156,9 @@ class OrganizerApp(TkinterDnD.Tk):
         self.tree.bind("<ButtonRelease-1>", self.on_click_release)
         # Double click to open file
         self.tree.bind("<Double-1>", self.on_double_click)
+        # Keyboard shortcuts
+        self.tree.bind("<Control-a>", self._select_all)
+        self.tree.bind("<Delete>", self._delete_selected)
         
         # 3. Bottom Bar: Actions & Log
         action_frame = ttk.Frame(self, padding=10)
@@ -449,6 +453,58 @@ class OrganizerApp(TkinterDnD.Tk):
         self.files_map.clear()
         for item in self.tree.get_children():
             self.tree.delete(item)
+
+    def _select_all(self, event=None):
+        """Ctrl+A: Files リストの全アイテムを選択"""
+        all_items = self.tree.get_children()
+        if all_items:
+            self.tree.selection_set(all_items)
+        return "break"
+
+    def _delete_selected(self, event=None):
+        """Del: 選択されたファイルをゴミ箱に移動し、リストから削除"""
+        selected_items = self.tree.selection()
+        if not selected_items:
+            return
+
+        count = len(selected_items)
+        if not messagebox.askyesno("確認", f"{count} 件のファイルをゴミ箱に移動しますか？"):
+            return
+
+        moved = 0
+        errors = 0
+        for item in selected_items:
+            path_to_remove = None
+            for path, iid in self.files_map.items():
+                if iid == item:
+                    path_to_remove = path
+                    break
+
+            if path_to_remove and os.path.exists(path_to_remove):
+                # ゴミ箱（_trash）ディレクトリに移動
+                parent_dir = os.path.dirname(path_to_remove)
+                trash_dir = os.path.join(parent_dir, '_trash')
+                try:
+                    if not os.path.exists(trash_dir):
+                        os.makedirs(trash_dir)
+                    dest = os.path.join(trash_dir, os.path.basename(path_to_remove))
+                    if os.path.exists(dest):
+                        base, ext = os.path.splitext(os.path.basename(path_to_remove))
+                        import time
+                        dest = os.path.join(trash_dir, f"{base}_{int(time.time())}{ext}")
+                    shutil.move(path_to_remove, dest)
+                    self.log(f"Trashed: {os.path.basename(path_to_remove)}")
+                    moved += 1
+                except Exception as e:
+                    self.log(f"Error trashing {os.path.basename(path_to_remove)}: {e}")
+                    errors += 1
+                    continue
+
+            if path_to_remove:
+                del self.files_map[path_to_remove]
+            self.tree.delete(item)
+
+        self.log(f"Delete completed: {moved} moved to _trash, {errors} errors.")
 
     def open_alias_manager(self):
         # Alias manager needs update? It uses DB, independent of list.
