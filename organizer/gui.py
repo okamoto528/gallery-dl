@@ -5,6 +5,7 @@ import os
 import threading
 import subprocess
 import shutil
+from send2trash import send2trash
 from .db_manager import DBManager
 from .file_organizer import FileOrganizer
 
@@ -481,18 +482,8 @@ class OrganizerApp(TkinterDnD.Tk):
                     break
 
             if path_to_remove and os.path.exists(path_to_remove):
-                # ゴミ箱（_trash）ディレクトリに移動
-                parent_dir = os.path.dirname(path_to_remove)
-                trash_dir = os.path.join(parent_dir, '_trash')
                 try:
-                    if not os.path.exists(trash_dir):
-                        os.makedirs(trash_dir)
-                    dest = os.path.join(trash_dir, os.path.basename(path_to_remove))
-                    if os.path.exists(dest):
-                        base, ext = os.path.splitext(os.path.basename(path_to_remove))
-                        import time
-                        dest = os.path.join(trash_dir, f"{base}_{int(time.time())}{ext}")
-                    shutil.move(path_to_remove, dest)
+                    send2trash(path_to_remove)
                     self.log(f"Trashed: {os.path.basename(path_to_remove)}")
                     moved += 1
                 except Exception as e:
